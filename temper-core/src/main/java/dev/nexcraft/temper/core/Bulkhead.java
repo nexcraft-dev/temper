@@ -1,5 +1,9 @@
 package dev.nexcraft.temper.core;
 
+import java.util.Objects;
+import java.util.concurrent.Callable;
+import java.util.logging.Logger;
+
 /**
  * Immutable vendor-neutral configuration for a bulkhead fault-tolerance capability.
  */
@@ -29,6 +33,21 @@ public final class Bulkhead implements FaultTolerance {
      */
     public int maxConcurrentCalls() {
         return maxConcurrentCalls;
+    }
+
+    /**
+     * Executes a task through this bulkhead configuration.
+     *
+     * @param task the task to execute
+     * @param <T> the task result type
+     * @return the task result
+     * @throws Exception if task execution fails
+     */
+    @Override
+    public <T> T execute(Callable<T> task) throws Exception {
+        Objects.requireNonNull(task, "task");
+        Logger.getLogger(Bulkhead.class.getName()).info("Executing Bulkhead");
+        return task.call();
     }
 
     /**
