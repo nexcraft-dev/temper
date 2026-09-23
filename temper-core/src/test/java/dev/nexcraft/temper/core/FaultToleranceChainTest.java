@@ -94,6 +94,19 @@ class FaultToleranceChainTest {
     }
 
     @Test
+    void createsBulkheadRuntimeOncePerBuiltChainAndReusesIt() throws Exception {
+        TestFaultToleranceRuntimeProvider.resetCreationCount();
+        FaultToleranceChain chain = FaultToleranceChain.builder()
+                .next(Bulkhead.builder().maxConcurrentCalls(1).build())
+                .build();
+
+        assertEquals(1, TestFaultToleranceRuntimeProvider.creationCount());
+        assertEquals("first", chain.execute(() -> "first"));
+        assertEquals("second", chain.execute(() -> "second"));
+        assertEquals(1, TestFaultToleranceRuntimeProvider.creationCount());
+    }
+
+    @Test
     void rejectsNullComponentsAndTasks() throws Exception {
         assertThrows(NullPointerException.class,
                 () -> FaultToleranceChain.builder().next((Bulkhead) null));
