@@ -3,10 +3,8 @@ package dev.nexcraft.temper.failsafe;
 import java.util.Objects;
 import java.util.concurrent.Callable;
 
-import dev.failsafe.Failsafe;
-import dev.failsafe.FailsafeException;
-import dev.failsafe.FailsafeExecutor;
 import dev.nexcraft.temper.core.Bulkhead;
+import dev.nexcraft.temper.core.BulkheadRejectedException;
 import dev.nexcraft.temper.core.FaultTolerance;
 import dev.nexcraft.temper.core.spi.FaultToleranceRuntimeProvider;
 
@@ -32,29 +30,26 @@ public final class FailsafeFaultToleranceRuntimeProvider implements FaultToleran
                     + (definition == null ? "null" : definition.getClass().getName()));
         }
         dev.failsafe.Bulkhead<Object> failsafeBulkhead = dev.failsafe.Bulkhead.of(bulkhead.maxConcurrentCalls());
-        FailsafeExecutor<Object> executor = Failsafe.with(failsafeBulkhead);
-        return new BulkheadRuntime(executor);
+        return new BulkheadRuntime(failsafeBulkhead);
     }
 
     private static final class BulkheadRuntime implements FaultTolerance {
-        private final FailsafeExecutor<Object> executor;
+        private final dev.failsafe.Bulkhead<Object> bulkhead;
 
-        private BulkheadRuntime(FailsafeExecutor<Object> executor) {
-            this.executor = executor;
+        private BulkheadRuntime(dev.failsafe.Bulkhead<Object> bulkhead) {
+            this.bulkhead = bulkhead;
         }
 
         @Override
-        @SuppressWarnings("unchecked")
         public <T> T execute(Callable<T> task) throws Exception {
             Objects.requireNonNull(task, "task");
+            if (!bulkhead.tryAcquirePermit()) {
+                throw new BulkheadRejectedException("Bulkhead concurrency limit reached");
+            }
             try {
-                return (T) executor.get(task::call);
-            } catch (FailsafeException exception) {
-                Throwable cause = exception.getCause();
-                if (cause instanceof Exception checked && !(cause instanceof RuntimeException)) {
-                    throw checked;
-                }
-                throw exception;
+                return task.call();
+            } finally {
+                bulkhead.releasePermit();
             }
         }
     }

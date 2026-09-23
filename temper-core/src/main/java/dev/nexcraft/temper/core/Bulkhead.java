@@ -35,17 +35,18 @@ public final class Bulkhead implements FaultTolerance {
     }
 
     /**
-     * Executes a task through this bulkhead configuration.
+     * Rejects direct execution of this bulkhead definition. Build a
+     * {@link FaultToleranceChain} with a runtime provider to enforce it.
      *
      * @param task the task to execute
      * @param <T> the task result type
-     * @return the task result
-     * @throws Exception if task execution fails
+     * @return never returns normally
+     * @throws IllegalStateException always, because this object is only a definition
      */
     @Override
     public <T> T execute(Callable<T> task) throws Exception {
         Objects.requireNonNull(task, "task");
-        return task.call();
+        throw new IllegalStateException("Bulkhead requires a runtime; execute through a FaultToleranceChain");
     }
 
     /**

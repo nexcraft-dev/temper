@@ -3,6 +3,7 @@ package dev.nexcraft.temper.core;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -16,52 +17,33 @@ import org.junit.jupiter.api.Test;
 
 class FaultToleranceChainTest {
     @Test
-    void executesBulkheadThenRateLimiterAndCapturesLogs() throws Exception {
+    void executesBulkheadRuntimeThenCallable() throws Exception {
         Bulkhead bulkhead = Bulkhead.builder().maxConcurrentCalls(1).build();
-        RateLimiter rateLimiter = RateLimiter.builder().limit(1).period(Duration.ofSeconds(1)).build();
         List<String> messages = new ArrayList<>();
         LogCapture capture = new LogCapture(messages);
         Logger.getLogger(Bulkhead.class.getName()).addHandler(capture);
-        Logger.getLogger(RateLimiter.class.getName()).addHandler(capture);
         Logger.getLogger(FaultToleranceChainTest.class.getName()).addHandler(capture);
         try {
             String result = new String("result");
-            assertSame(result, FaultToleranceChain.builder().next(bulkhead).next(rateLimiter).build()
+            assertSame(result, FaultToleranceChain.builder().next(bulkhead).build()
                     .execute(() -> {
                         Logger.getLogger(FaultToleranceChainTest.class.getName()).info("Callable");
                         return result;
                     }));
         } finally {
             Logger.getLogger(Bulkhead.class.getName()).removeHandler(capture);
-            Logger.getLogger(RateLimiter.class.getName()).removeHandler(capture);
             Logger.getLogger(FaultToleranceChainTest.class.getName()).removeHandler(capture);
         }
-        assertEquals(List.of("Executing Bulkhead", "Executing RateLimiter", "Callable"), messages);
+        assertEquals(List.of("Executing Bulkhead", "Callable"), messages);
     }
 
     @Test
-    void executesRateLimiterThenBulkhead() throws Exception {
-        List<String> messages = new ArrayList<>();
-        LogCapture capture = new LogCapture(messages);
-        Logger.getLogger(Bulkhead.class.getName()).addHandler(capture);
-        Logger.getLogger(RateLimiter.class.getName()).addHandler(capture);
-        Logger.getLogger(FaultToleranceChainTest.class.getName()).addHandler(capture);
-        try {
-            String result = new String("result");
-            assertSame(result, FaultToleranceChain.builder()
-                    .next(RateLimiter.builder().limit(1).period(Duration.ofSeconds(1)).build())
-                    .next(Bulkhead.builder().maxConcurrentCalls(1).build())
-                    .build()
-                    .execute(() -> {
-                        Logger.getLogger(FaultToleranceChainTest.class.getName()).info("Callable");
-                        return result;
-                    }));
-        } finally {
-            Logger.getLogger(Bulkhead.class.getName()).removeHandler(capture);
-            Logger.getLogger(RateLimiter.class.getName()).removeHandler(capture);
-            Logger.getLogger(FaultToleranceChainTest.class.getName()).removeHandler(capture);
-        }
-        assertEquals(List.of("Executing RateLimiter", "Executing Bulkhead", "Callable"), messages);
+    void rejectsRateLimiterWithoutRuntimeProvider() {
+        RateLimiter rateLimiter = RateLimiter.builder().limit(1).period(Duration.ofSeconds(1)).build();
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+                () -> FaultToleranceChain.builder().next(rateLimiter).build());
+        assertTrue(failure.getMessage().contains(RateLimiter.class.getName()));
     }
 
     @Test

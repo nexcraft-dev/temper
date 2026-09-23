@@ -36,14 +36,16 @@ public final class TestFaultToleranceRuntimeProvider implements FaultToleranceRu
 
     @Override
     public FaultTolerance create(final FaultTolerance definition) {
-        Bulkhead bulkhead = (Bulkhead) Objects.requireNonNull(definition, "definition");
+        if (!(Objects.requireNonNull(definition, "definition") instanceof Bulkhead)) {
+            throw new IllegalArgumentException("Unsupported definition: " + definition.getClass().getName());
+        }
         CREATION_COUNT.incrementAndGet();
         return new FaultTolerance() {
             @Override
             public <T> T execute(final Callable<T> task) throws Exception {
                 Objects.requireNonNull(task, "task");
                 Logger.getLogger(Bulkhead.class.getName()).info("Executing Bulkhead");
-                return bulkhead.execute(task);
+                return task.call();
             }
         };
     }

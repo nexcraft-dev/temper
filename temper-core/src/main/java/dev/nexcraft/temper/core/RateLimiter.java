@@ -3,7 +3,6 @@ package dev.nexcraft.temper.core;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.Callable;
-import java.util.logging.Logger;
 
 /**
  * Immutable vendor-neutral configuration for a rate-limiter fault-tolerance capability.
@@ -51,18 +50,17 @@ public final class RateLimiter implements FaultTolerance {
     }
 
     /**
-     * Executes a task through this rate-limiter configuration.
+     * Rejects direct execution until a rate-limiter runtime is available.
      *
      * @param task the task to execute
      * @param <T> the task result type
-     * @return the task result
-     * @throws Exception if task execution fails
+     * @return never returns normally
+     * @throws IllegalStateException always, because no rate-limiter runtime is available
      */
     @Override
     public <T> T execute(Callable<T> task) throws Exception {
         Objects.requireNonNull(task, "task");
-        Logger.getLogger(RateLimiter.class.getName()).info("Executing RateLimiter");
-        return task.call();
+        throw new IllegalStateException("RateLimiter requires a runtime provider");
     }
 
     /**

@@ -12,7 +12,7 @@ public interface FaultToleranceRuntimeProvider {
      * @param definition the non-null fault-tolerance definition
      * @return {@code true} if this provider can create a runtime for the definition
      */
-    public abstract boolean supports(final FaultTolerance definition);
+    boolean supports(final FaultTolerance definition);
 
     /**
      * Creates a reusable runtime for the supplied definition.
@@ -20,5 +20,5 @@ public interface FaultToleranceRuntimeProvider {
      * @param definition the non-null fault-tolerance definition
      * @return a non-null reusable runtime
      */
-    public abstract FaultTolerance create(final FaultTolerance definition);
+    FaultTolerance create(final FaultTolerance definition);
 }

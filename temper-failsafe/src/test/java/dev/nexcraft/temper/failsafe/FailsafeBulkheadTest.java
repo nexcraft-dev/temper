@@ -1,6 +1,7 @@
 package dev.nexcraft.temper.failsafe;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -23,7 +24,10 @@ import java.util.logging.Logger;
 import org.junit.jupiter.api.Test;
 
 import dev.nexcraft.temper.core.Bulkhead;
+import dev.nexcraft.temper.core.BulkheadRejectedException;
 import dev.nexcraft.temper.core.FaultToleranceChain;
+import dev.nexcraft.temper.core.Orchestrator;
+import dev.nexcraft.temper.core.OrchestratorConfig;
 import dev.nexcraft.temper.core.RateLimiter;
 
 class FailsafeBulkheadTest {
@@ -51,7 +55,7 @@ class FailsafeBulkheadTest {
             assertTrue(entered.await(2, TimeUnit.SECONDS));
             ExecutionException overflow = assertThrows(ExecutionException.class,
                     () -> pool.submit(() -> chain.execute(blocked)).get());
-            assertTrue(overflow.getCause().getClass().getName().contains("Bulkhead"));
+            assertInstanceOf(BulkheadRejectedException.class, overflow.getCause());
             assertEquals(2, maximum.get());
             release.countDown();
             assertEquals("ok", first.get(2, TimeUnit.SECONDS));
@@ -74,6 +78,32 @@ class FailsafeBulkheadTest {
         }));
         assertSame(checked, observed);
         assertEquals("after", chain.execute(() -> "after"));
+    }
+
+    @Test
+    void configuredOrchestratorUsesTheBuiltBulkheadChain() throws Exception {
+        FaultToleranceChain chain = FaultToleranceChain.builder()
+                .next(Bulkhead.builder().maxConcurrentCalls(1).build())
+                .build();
+        Orchestrator orchestrator = Orchestrator.create(new OrchestratorConfig(chain));
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            Future<Void> first = pool.submit(() -> orchestrator.execute(() -> {
+                entered.countDown();
+                release.await();
+                return null;
+            }));
+            assertTrue(entered.await(2, TimeUnit.SECONDS));
+            assertThrows(BulkheadRejectedException.class, () -> orchestrator.execute(() -> "overflow"));
+            release.countDown();
+            first.get(2, TimeUnit.SECONDS);
+            assertEquals("after", orchestrator.execute(() -> "after"));
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+        }
     }
 
     @Test
@@ -112,7 +142,9 @@ class FailsafeBulkheadTest {
             }));
             assertTrue(entered.await(2, TimeUnit.SECONDS));
             Future<Void> overflow = pool.submit(() -> chain.execute(() -> null));
-            assertThrows(ExecutionException.class, () -> overflow.get(2, TimeUnit.SECONDS));
+            ExecutionException rejected = assertThrows(ExecutionException.class,
+                    () -> overflow.get(2, TimeUnit.SECONDS));
+            assertInstanceOf(BulkheadRejectedException.class, rejected.getCause());
             assertEquals(expectedLogs, messages);
             release.countDown();
             first.get(2, TimeUnit.SECONDS);
