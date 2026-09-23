@@ -2,7 +2,6 @@ package dev.nexcraft.temper.core;
 
 import java.util.Objects;
 import java.util.concurrent.Callable;
-import java.util.logging.Logger;
 
 /**
  * Immutable vendor-neutral configuration for a bulkhead fault-tolerance capability.
@@ -36,18 +35,18 @@ public final class Bulkhead implements FaultTolerance {
     }
 
     /**
-     * Executes a task through this bulkhead configuration.
+     * Rejects direct execution of this bulkhead definition. Build a
+     * {@link FaultToleranceChain} with a runtime provider to enforce it.
      *
      * @param task the task to execute
      * @param <T> the task result type
-     * @return the task result
-     * @throws Exception if task execution fails
+     * @return never returns normally
+     * @throws IllegalStateException always, because this object is only a definition
      */
     @Override
     public <T> T execute(Callable<T> task) throws Exception {
         Objects.requireNonNull(task, "task");
-        Logger.getLogger(Bulkhead.class.getName()).info("Executing Bulkhead");
-        return task.call();
+        throw new IllegalStateException("Bulkhead requires a runtime; execute through a FaultToleranceChain");
     }
 
     /**

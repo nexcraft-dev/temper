@@ -3,7 +3,10 @@ package dev.nexcraft.temper.core;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.ServiceLoader;
 import java.util.concurrent.Callable;
+
+import dev.nexcraft.temper.core.spi.FaultToleranceRuntimeProvider;
 
 /**
  * Immutable declaration-ordered composition of supported fault-tolerance components.
@@ -88,13 +91,38 @@ public final class FaultToleranceChain implements FaultTolerance {
          * Builds the immutable chain and composes its continuations once.
          *
          * @return an immutable fault-tolerance chain
+         * @throws IllegalStateException if a component has no runtime provider,
+         *         multiple providers, or a provider returns null
          */
         public FaultToleranceChain build() {
             Continuation composed = new TerminalContinuation();
             for (int index = components.size() - 1; index >= 0; index--) {
-                composed = new ComponentContinuation(components.get(index), composed);
+                composed = new ComponentContinuation(resolveRuntime(components.get(index)), composed);
             }
             return new FaultToleranceChain(composed);
+        }
+
+        private FaultTolerance resolveRuntime(final FaultTolerance component) {
+            FaultToleranceRuntimeProvider supportingProvider = null;
+            for (FaultToleranceRuntimeProvider provider : ServiceLoader.load(FaultToleranceRuntimeProvider.class)) {
+                if (provider.supports(component)) {
+                    if (supportingProvider != null) {
+                        throw new IllegalStateException("Multiple runtime providers support "
+                                + component.getClass().getName());
+                    }
+                    supportingProvider = provider;
+                }
+            }
+            if (supportingProvider == null) {
+                throw new IllegalStateException("No runtime provider supports "
+                        + component.getClass().getName());
+            }
+            FaultTolerance runtime = supportingProvider.create(component);
+            if (runtime == null) {
+                throw new IllegalStateException("Runtime provider returned null for "
+                        + component.getClass().getName());
+            }
+            return runtime;
         }
     }
 

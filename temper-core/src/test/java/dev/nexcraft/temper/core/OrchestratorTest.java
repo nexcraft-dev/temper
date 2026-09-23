@@ -66,6 +66,11 @@ class OrchestratorTest {
     }
 
     @Test
+    void configurationRejectsNullChain() {
+        assertThrows(NullPointerException.class, () -> new OrchestratorConfig(null));
+    }
+
+    @Test
     void executeRejectsNullTask() {
         Orchestrator orchestrator = Orchestrator.create(new OrchestratorConfig());
 
