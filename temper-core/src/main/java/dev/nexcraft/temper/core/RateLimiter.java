@@ -6,6 +6,10 @@ import java.util.concurrent.Callable;
 
 /**
  * Immutable vendor-neutral configuration for a rate-limiter fault-tolerance capability.
+ *
+ * <p>In a built chain, this definition allows at most {@link #limit()} calls
+ * during each {@link #period()} fixed window. Calls near a window boundary can
+ * use capacity from both adjacent windows in a short interval (a boundary burst).
  */
 public final class RateLimiter implements FaultTolerance {
     private final int limit;
@@ -50,12 +54,13 @@ public final class RateLimiter implements FaultTolerance {
     }
 
     /**
-     * Rejects direct execution until a rate-limiter runtime is available.
+     * Rejects direct execution of this definition. Build a
+     * {@link FaultToleranceChain} with a runtime provider to enforce it.
      *
      * @param task the task to execute
      * @param <T> the task result type
      * @return never returns normally
-     * @throws IllegalStateException always, because no rate-limiter runtime is available
+     * @throws IllegalStateException always, because this object is only a definition
      */
     @Override
     public <T> T execute(Callable<T> task) throws Exception {
