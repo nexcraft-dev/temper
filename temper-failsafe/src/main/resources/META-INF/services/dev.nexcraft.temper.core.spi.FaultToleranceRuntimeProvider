@@ -1,1 +1,2 @@
 dev.nexcraft.temper.failsafe.FailsafeFaultToleranceRuntimeProvider
+dev.nexcraft.temper.failsafe.FailsafeRateLimiterRuntimeProvider

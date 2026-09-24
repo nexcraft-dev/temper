@@ -21,6 +21,18 @@ String result = orchestrator.execute(() -> "done");
 
 Calls above the concurrency limit fail immediately with
 `BulkheadRejectedException`. A configured component without a runtime provider
-fails when the chain is built. `RateLimiter` currently has no production runtime
-provider, so a chain containing it cannot be built until one is added. Policy
-definitions should not be executed directly.
+fails when the chain is built. Include `temper-failsafe` at runtime to enforce a
+rate limit:
+
+```java
+import java.time.Duration;
+
+FaultToleranceChain chain = FaultToleranceChain.builder()
+        .next(RateLimiter.builder().limit(10).period(Duration.ofSeconds(1)).build())
+        .build();
+```
+
+Calls above the configured limit fail immediately with
+`RateLimitRejectedException`. The Failsafe adapter uses fixed-window behavior,
+so a burst near a window boundary may consume capacity from both adjacent
+windows. Policy definitions should not be executed directly.

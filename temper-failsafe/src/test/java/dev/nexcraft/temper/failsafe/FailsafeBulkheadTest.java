@@ -7,8 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -17,9 +15,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.logging.Handler;
-import java.util.logging.LogRecord;
-import java.util.logging.Logger;
 
 import org.junit.jupiter.api.Test;
 
@@ -28,6 +23,7 @@ import dev.nexcraft.temper.core.BulkheadRejectedException;
 import dev.nexcraft.temper.core.FaultToleranceChain;
 import dev.nexcraft.temper.core.Orchestrator;
 import dev.nexcraft.temper.core.OrchestratorConfig;
+import dev.nexcraft.temper.core.RateLimitRejectedException;
 import dev.nexcraft.temper.core.RateLimiter;
 
 class FailsafeBulkheadTest {
@@ -107,33 +103,27 @@ class FailsafeBulkheadTest {
     }
 
     @Test
-    void preservesBulkheadBeforeRateLimiterOrder() throws Exception {
-        RateLimiter rateLimiter = RateLimiter.builder().limit(10).period(Duration.ofMinutes(1)).build();
+    void bulkheadBeforeRateLimiterDoesNotSpendQuotaOnBulkheadRejection() throws Exception {
         FaultToleranceChain chain = FaultToleranceChain.builder()
                 .next(Bulkhead.builder().maxConcurrentCalls(1).build())
-                .next(rateLimiter)
+                .next(RateLimiter.builder().limit(2).period(Duration.ofMinutes(1)).build())
                 .build();
-        assertDeclarationOrder(chain, List.of("Executing RateLimiter"));
+        assertOrderingQuota(chain, false);
     }
 
     @Test
-    void preservesRateLimiterBeforeBulkheadOrder() throws Exception {
-        RateLimiter rateLimiter = RateLimiter.builder().limit(10).period(Duration.ofMinutes(1)).build();
+    void rateLimiterBeforeBulkheadSpendsQuotaOnBulkheadRejection() throws Exception {
         FaultToleranceChain chain = FaultToleranceChain.builder()
-                .next(rateLimiter)
+                .next(RateLimiter.builder().limit(2).period(Duration.ofMinutes(1)).build())
                 .next(Bulkhead.builder().maxConcurrentCalls(1).build())
                 .build();
-        assertDeclarationOrder(chain, List.of("Executing RateLimiter", "Executing RateLimiter"));
+        assertOrderingQuota(chain, true);
     }
 
-    private static void assertDeclarationOrder(FaultToleranceChain chain, List<String> expectedLogs) throws Exception {
-        List<String> messages = new ArrayList<>();
-        MessageCapture capture = new MessageCapture(messages);
-        Logger logger = Logger.getLogger(RateLimiter.class.getName());
-        logger.addHandler(capture);
-        ExecutorService pool = Executors.newFixedThreadPool(2);
+    private static void assertOrderingQuota(FaultToleranceChain chain, boolean overflowConsumesQuota) throws Exception {
         CountDownLatch entered = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
+        ExecutorService pool = Executors.newSingleThreadExecutor();
         try {
             Future<Void> first = pool.submit(() -> chain.execute(() -> {
                 entered.countDown();
@@ -141,38 +131,17 @@ class FailsafeBulkheadTest {
                 return null;
             }));
             assertTrue(entered.await(2, TimeUnit.SECONDS));
-            Future<Void> overflow = pool.submit(() -> chain.execute(() -> null));
-            ExecutionException rejected = assertThrows(ExecutionException.class,
-                    () -> overflow.get(2, TimeUnit.SECONDS));
-            assertInstanceOf(BulkheadRejectedException.class, rejected.getCause());
-            assertEquals(expectedLogs, messages);
+            assertThrows(BulkheadRejectedException.class, () -> chain.execute(() -> null));
             release.countDown();
             first.get(2, TimeUnit.SECONDS);
+            if (overflowConsumesQuota) {
+                assertThrows(RateLimitRejectedException.class, () -> chain.execute(() -> null));
+            } else {
+                assertEquals("available", chain.execute(() -> "available"));
+            }
         } finally {
             release.countDown();
             pool.shutdownNow();
-            logger.removeHandler(capture);
-        }
-    }
-
-    private static final class MessageCapture extends Handler {
-        private final List<String> messages;
-
-        private MessageCapture(List<String> messages) {
-            this.messages = messages;
-        }
-
-        @Override
-        public void publish(LogRecord record) {
-            messages.add(record.getMessage());
-        }
-
-        @Override
-        public void flush() {
-        }
-
-        @Override
-        public void close() {
         }
     }
 }
